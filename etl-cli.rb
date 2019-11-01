@@ -5,7 +5,7 @@ require 'psych'
 require 'git'
 require 'tmpdir'
 
-require './config/app'
+require_relative 'config/app'
 
 def make_ref_html(ref, i)
   link = " [<a href=\"#{ref['url']}\">link</a>]" unless ref['url'].nil?
@@ -33,11 +33,7 @@ ref_regexp = /~~~yaml references\n(.*)~~~/m
 contents = files.map do |file|
   content = File.read(file)
   refs_yaml = content.scan(ref_regexp).flatten.join('\n').strip
-  refs = if !refs_yaml.empty?
-    Psych.load(refs_yaml)
-  else
-    {}
-  end
+  refs = Psych.load(refs_yaml) || {}
   ref_keys = refs.keys.sort
   refs_idx = ref_keys.each_with_index.map do |v, i|
     [v, "<a href=\"##{v}\">#{i+1}</a>"]
