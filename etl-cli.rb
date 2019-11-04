@@ -69,10 +69,12 @@ contents = files.map do |file|
   content = content.gsub(ref_regexp, '').gsub(/(#{ref_keys.join('|')})/, refs_idx).strip
   content = content + "\n\n---\n\n## References\n\n<ul>\n\t" + refs_list.join("\n\t") + "\n</ul>" unless refs_list.empty?
 
-  file_bn = file.gsub(/^.*\/content\//, '').gsub('.md', '').gsub('_', '-')
+  index_page = file.match?(/index\.md$/)
+  file_bn = file.gsub(/^.*\/content\//, '').gsub('.md', '').gsub('/index', '').gsub('_', '-')
   
   {
     id: file_bn,
+    index: index_page,
     content: content
   }
 end
