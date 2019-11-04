@@ -11,22 +11,34 @@ require_relative 'config/app'
 
 def make_ref_html(ref, i)
   link = " [<a href=\"#{ref['url']}\">link</a>]" unless ref['url'].nil?
-  "<li>[#{i}] #{ref['text']}#{link}</li>"
+  date = ref['retrieved_on'].strftime('%-d %B %Y')
+  retrieved_on = "Retrieved on: #{date}." unless date.nil?
+  language = "Language: #{ref['lang']}" unless ref['lang'].nil? or ref['lang'].empty?
+  "<li>[#{i}] #{ref['text']}#{link}. #{retrieved_on} #{language}</li>"
 end
 
 opts = Slop.parse do |o|
   o.string '-s', '--sha', 'The commit SHA that needs to be parsed'
   o.string '-r', '--repo', 'The git repository with content to parse'
+  o.string '-e', '--elasticsearch-url', 'The full URL of your ElasticSearch instance'
 end
 
 git_dir = Dir.mktmpdir(['thefaq-', '-etl'])
-content_repo = CONTENT_REPO || opts[:repo]
 
+content_repo = CONTENT_REPO || opts[:repo]
 if content_repo.nil? or content_repo.empty?
   warn opts.to_s
   warn "\nMust specify a content repository."
   exit(-2)
 end
+
+es_url = ES_URL || opts[:elasticsearch_url]
+if es_url.nil? or es_url.empty?
+  warn opts.to_s
+  warn "\nMust specify an ElasticSearch URL."
+  exit(-3)
+end
+es = Elasticsearch::Client.new url: es_url, log: true
 
 sha = opts[:sha] || ''
 if File.directory?(content_repo)
@@ -56,8 +68,34 @@ contents = files.map do |file|
   refs_list = ref_keys.each_with_index.map { |v, i| make_ref_html(refs[v], i+1) }
   content = content.gsub(ref_regexp, '').gsub(/(#{ref_keys.join('|')})/, refs_idx).strip
   content = content + "\n\n---\n\n## References\n\n<ul>\n\t" + refs_list.join("\n\t") + "\n</ul>" unless refs_list.empty?
-  content
+
+  file_bn = file.gsub(/^.*\/content\//, '').gsub('.md', '').gsub('_', '-')
+  
+  {
+    id: file_bn,
+    content: content
+  }
 end
+
+es_index = "#{sha}_content"
+es.indices.delete index: es_index, ignore_unavailable: true
+es.indices.create index: es_index
+
+contents.each do |c|
+  es.create index: es_index,
+            type: 'doc',
+            id: c[:id],
+            body: c
+end
+
+begin
+  es.indices.get_alias(name: 'current_content').keys.each do |index|
+    es.indices.delete_alias index: index, name: 'current_content'
+  end
+rescue Elasticsearch::Transport::Transport::Errors::NotFound
+  warn "Alias current_content not found. Continuing..."
+end
+es.indices.put_alias index: es_index, name: 'current_content'
 
 Git.open(git_dir).checkout('master')
 
