@@ -72,9 +72,17 @@ contents = files.map do |file|
   index_page = file.match?(/index\.md$/)
   file_bn = file.gsub(/^.*\/content\//, '').gsub('.md', '').gsub('/index', '').gsub('_', '-')
   
+  title_re = /^# (.*)/
+  title = content.match(title_re)[1] || ''
+
+  summary_re = /^# .+?\n+(.*)/m
+  summary = content.match(summary_re)[1].split("\n")[0]
+
   {
     id: file_bn,
     index: index_page,
+    title: title,
+    summary: summary,
     content: content
   }
 end
