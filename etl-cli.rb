@@ -11,7 +11,7 @@ require_relative 'config/app'
 
 def make_ref_html(ref, i)
   link = " [<a href=\"#{ref['url']}\">link</a>]" unless ref['url'].nil?
-  date = ref['retrieved_on'].strftime('%-d %B %Y')
+  date = ref['retrieved_on'].strftime('%-d %B %Y') unless ref['retrieved_on'].nil?
   retrieved_on = "Retrieved on: #{date}." unless date.nil?
   language = "Language: #{ref['lang']}" unless ref['lang'].nil? or ref['lang'].empty?
   "<li>[#{i}] #{ref['text']}#{link}. #{retrieved_on} #{language}</li>"
@@ -38,7 +38,7 @@ if es_url.nil? or es_url.empty?
   warn "\nMust specify an ElasticSearch URL."
   exit(-3)
 end
-es = Elasticsearch::Client.new url: es_url, log: true
+es = Elasticsearch::Client.new url: es_url, log: false
 
 sha = opts[:sha] || ''
 if File.directory?(content_repo)
@@ -56,8 +56,12 @@ end
 sha = Git.open(git_dir).log[0].to_s if sha.empty?
 
 files = Dir.glob(git_dir + '/content/**/*.md')
-ref_regexp = /~~~yaml references\n(.*?)~~~/m
+ref_regexp = /~~~yaml\s+references\n(.*?)~~~/m
 contents = files.map do |file|
+  file_bn = file.gsub(/^.*\/content\//, '').gsub('.md', '').gsub('/index', '').gsub('_', '-')
+  index_page = file.match?(/index\.md$/)
+  warn '>>> ' + file_bn + (index_page ? '/index' : '')
+
   content = File.read(file)
   refs_yaml = content.scan(ref_regexp).flatten.join('\n').strip
   refs = Psych.load(refs_yaml) || {}
@@ -68,15 +72,16 @@ contents = files.map do |file|
   refs_list = ref_keys.each_with_index.map { |v, i| make_ref_html(refs[v], i+1) }
   content = content.gsub(ref_regexp, '').gsub(/(#{ref_keys.join('|')})/, refs_idx).strip
   content = content + "\n\n---\n\n## References\n\n<ul>\n\t" + refs_list.join("\n\t") + "\n</ul>" unless refs_list.empty?
-
-  index_page = file.match?(/index\.md$/)
-  file_bn = file.gsub(/^.*\/content\//, '').gsub('.md', '').gsub('/index', '').gsub('_', '-')
   
   title_re = /^# (.*)/
   title = content.match(title_re)[1] || ''
+  warn '    Missing title' if title.empty?
 
   summary_re = /^# .+?\n+(.*)/m
   summary = content.match(summary_re)[1].split("\n")[0]
+  warn '    Unable to generate summary' if summary.empty?
+
+  warn ''
 
   {
     id: file_bn,
